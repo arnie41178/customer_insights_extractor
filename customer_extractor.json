@@ -1,0 +1,269 @@
+{
+  "name": "Customer Pain Point Extraction",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "86aca677-7588-49ec-a350-1cd02afe9195",
+      "name": "When clicking ‘Test workflow’"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "filters": {
+          "sender": "abhatt@caastle.com"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        440,
+        0
+      ],
+      "id": "dfda557c-50eb-48ce-aabd-f49c51229e2b",
+      "name": "Gmail",
+      "webhookId": "77ea9ccc-2033-4ec3-b8a9-87f381f89a50",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "ub2XOh7XbOlwMInn",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-3.5-turbo-0125",
+          "mode": "list",
+          "cachedResultName": "GPT-3.5-TURBO-0125"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Given this Gmail message snippet:\n\n\"{{ $json.snippet }}\"\n\nClassify it as either:\n- \"PainPoint\" (if it's a customer issue or complaint)\n- \"NotRelevant\" (if it's a promo, marketing, or general info)\n\nRespond strictly in the following JSON format:\n\n{\n  \"snippet\": \"<original snippet>\",\n  \"classification\": \"<PainPoint or NotRelevant>\"\n}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        660,
+        0
+      ],
+      "id": "026e31f5-5187-476e-a041-5547ee4d58d1",
+      "name": "OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "id": "KwvIrfSote1kTCC2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = [];\n\nfor (const item of items) {\n  const raw = item.json.message?.content || \"\";\n\n  try {\n    const parsed = JSON.parse(raw);\n\n    results.push({\n      json: {\n        snippet: parsed.snippet,\n        classification: parsed.classification\n      }\n    });\n  } catch (e) {\n    results.push({\n      json: {\n        error: \"Failed to parse JSON\",\n        rawContent: raw\n      }\n    });\n  }\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1020,
+        0
+      ],
+      "id": "290cc4c7-bb58-4752-9df9-67e048b96a4d",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2389ccd6-bae1-4e27-80e0-1907d71eb242",
+              "leftValue": "={{ $json.classification }}",
+              "rightValue": "PainPoint",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1240,
+        0
+      ],
+      "id": "a726309e-cedf-4d64-aea8-b195dfe552ea",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-3.5-turbo-0125",
+          "mode": "list",
+          "cachedResultName": "GPT-3.5-TURBO-0125"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Here is a customer support message snippet:\n\n\"{{ $json.snippet }}\"\n\nYour task is to extract up to 2 key pain points from this message. Do not invent new categories. Instead, **choose from the predefined list of canonical labels** below. Each label should be accompanied by a **brief reason** based on the message content.\n\nUse this list of allowed labels:\n\n{{ $(\"Edit Fields\").item.json.IssueTypeCanonicalLabel.join('\\n- ') }}\n\n\nRespond strictly in this JSON format:\n\n```json\n{\n  \"painPoints\": [\n    {\n      \"label\": \"<One of the categories above>\",\n      \"reason\": \"<Brief explanation based on the message>\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        1460,
+        -100
+      ],
+      "id": "19c6b906-016d-4d52-a76e-04ac9e0a5b42",
+      "name": "OpenAI1",
+      "credentials": {
+        "openAiApi": {
+          "id": "KwvIrfSote1kTCC2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const painPointMap = {};\n\nfor (const item of items) {\n  const rawContent = item.json.message?.content || \"\";\n\n  // Strip markdown formatting (```json ... ```)\n  const cleaned = rawContent\n    .replace(/```json\\n?/g, '')\n    .replace(/```/g, '')\n    .trim();\n\n  let parsed;\n  try {\n    parsed = JSON.parse(cleaned);\n  } catch (err) {\n    console.log(\"Parsing failed:\", err.message);\n    continue;\n  }\n\n  const points = parsed.painPoints || [];\n  for (const point of points) {\n    if (!point.label || typeof point.label !== \"string\") continue;\n\n    const label = point.label.trim().toLowerCase(); // normalize label\n    const reason = point.reason?.trim();\n\n    if (!painPointMap[label]) {\n      painPointMap[label] = {\n        painPoint: label,\n        count: 0,\n        reasons: new Set()\n      };\n    }\n\n    painPointMap[label].count += 1;\n\n    if (reason) {\n      painPointMap[label].reasons.add(reason);\n    }\n  }\n}\n\n// Convert map to array & format reasons into strings\nconst result = Object.values(painPointMap)\n  .map(entry => ({\n    painPoint: entry.painPoint,\n    count: entry.count,\n    reasons: Array.from(entry.reasons) // Convert Set to array\n  }))\n  .sort((a, b) => b.count - a.count); // Descending by frequency\n\nreturn result.map(row => ({ json: row }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        -100
+      ],
+      "id": "45c81683-eeaa-47f1-b3d3-66b24dea6cfd",
+      "name": "Code1"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\n\"IssueTypeCanonicalLabel\": [\n\"Delayed shipment\",\n\"Missing items in shipment\",\n\"Incorrect item shipped\",\n\"Unable to cancel account\",\n\"Billing error\",\n\"Poor customer support\",\n\"Lack of return updates\",\n\"Unclear shipping timeline\",\n\"Account access issue\",\n\"Technical issue with closet page\",\n\"Limited product selection\",\n\"No tracking or shipping updates\",\n\"Subscription charged without usage\",\n\"Service usability issue\",\n\"Other\"\n  ]\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ],
+      "id": "b1a2f217-5a20-4d3a-acb2-87d94452fe37",
+      "name": "Edit Fields"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Test workflow’": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail": {
+      "main": [
+        [
+          {
+            "node": "OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "OpenAI1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI1": {
+      "main": [
+        [
+          {
+            "node": "Code1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "381f81bc-7785-4ba5-9392-202e918de2c0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "41c7b8ac1ef1c9bacc8adafb77e8a84b99671a23466bd35cffe547f365187c33"
+  },
+  "id": "4JhU0Ib1BTZyRDhn",
+  "tags": []
+}
